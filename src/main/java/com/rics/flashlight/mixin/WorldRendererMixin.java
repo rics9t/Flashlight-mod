@@ -1,69 +1,60 @@
-package com.rics.flashlight;
+package com.rics.flashlight.mixin;
 
-import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.Vec3d;
-import org.lwjgl.glfw.GLFW;
+import com.rics.flashlight.FlashlightModClient;
+import net.minecraft.block.BlockState;
+import net.minecraft.client.render.WorldRenderer;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.BlockRenderView;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.Set;
+@Mixin(WorldRenderer.class)
+public class WorldRendererMixin {
 
-public class FlashlightModClient implements ClientModInitializer {
+    @Inject(method = "getLightmapCoordinates(Lnet/minecraft/world/BlockRenderView;Lnet/minecraft/block/BlockState;Lnet/minecraft/util/math/BlockPos;)I", at = @At("RETURN"), cancellable = true)
+    private static void modifyLightmapCoordinates(BlockRenderView world, BlockState state, BlockPos pos, CallbackInfoReturnable<Integer> cir) {
+        
+        int originalLight = cir.getReturnValue();
+        int skyLight = (originalLight >> 20) & 15;
+        int blockLight = (originalLight >> 4) & 15;
 
-    public static KeyBinding flashlightKey;
-    public static boolean isFlashlightOn = false;
+        boolean modified = false;
 
-    // Data passed to the Renderer
-    public static Vec3d lightHitPos = null;
-    public static double playerDistToTarget = 0;
+        // --- FEATURE 1: SPB-REVAMPED GLOW ---
+        Identifier id = Registries.BLOCK.getId(state.getBlock());
+        if (FlashlightModClient.GLOWING_BLOCK_IDS.contains(id.toString())) {
+            blockLight = Math.max(blockLight, 10);
+            modified = true;
+        }
 
-    // The list of blocks from the other mod that should glow
-    public static final Set<String> GLOWING_BLOCK_IDS = Set.of(
-            "spb-revamped:tiny_fluorescent_light",
-            "spb-revamped:ceiling_light",
-            "spb-revamped:thin_fluorescent_light",
-            "spb-revamped:fluorescent_light"
-    );
+        // --- FEATURE 2: FLASHLIGHT BEAM ---
+        if (FlashlightModClient.isFlashlightOn && FlashlightModClient.lightHitPos != null) {
+            
+            double distSq = pos.getSquaredDistance(FlashlightModClient.lightHitPos.x, FlashlightModClient.lightHitPos.y, FlashlightModClient.lightHitPos.z);
+            double distPlayerToTarget = FlashlightModClient.playerDistToTarget;
 
-    @Override
-    public void onInitializeClient() {
-        // Register Key "R"
-        flashlightKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.flashlight.toggle",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_R,
-                "category.flashlight"
-        ));
+            // Math to simulate beam width
+            double spreadRadius = 1.5 + (distPlayerToTarget * 0.15); 
 
-        // Tick Event: Check toggles and calculate raycast
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null || client.world == null) return;
-
-            // Toggle Logic
-            while (flashlightKey.wasPressed()) {
-                isFlashlightOn = !isFlashlightOn;
-                // Play a click sound (optional, helps feedback)
-                client.player.playSound(net.minecraft.sound.SoundEvents.BLOCK_LEVER_CLICK, 0.5f, isFlashlightOn ? 0.6f : 0.5f);
-            }
-
-            // Raycast Logic (Beam Physics Calculation)
-            if (isFlashlightOn) {
-                // Raycast 30 blocks ahead
-                HitResult hit = client.player.raycast(30.0D, 0.0F, false);
+            if (distSq < (spreadRadius * spreadRadius)) {
+                double falloff = 1.0 - (Math.sqrt(distSq) / spreadRadius);
+                int baseIntensity = (distPlayerToTarget < 5) ? 15 : 12;
+                int addedLight = (int) (baseIntensity * falloff);
                 
-                if (hit.getType() != HitResult.Type.MISS) {
-                    lightHitPos = hit.getPos();
-                    playerDistToTarget = client.player.getEyePos().distanceTo(lightHitPos);
-                } else {
-                    lightHitPos = null; // Pointing at sky
-                }
-            } else {
-                lightHitPos = null;
+                blockLight = Math.max(blockLight, addedLight);
+                modified = true;
             }
-        });
+        }
+
+        if (modified) {
+            blockLight = MathHelper.clamp(blockLight, 0, 15);
+            int newLight = (skyLight << 20) | (blockLight << 4);
+            cir.setReturnValue(newLight);
+        }
     }
 }

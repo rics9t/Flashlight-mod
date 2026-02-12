@@ -3,7 +3,6 @@ package com.rics.flashlight;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.hit.HitResult;
@@ -46,7 +45,6 @@ public class FlashlightModClient implements ClientModInitializer {
             // Toggle Logic
             while (flashlightKey.wasPressed()) {
                 isFlashlightOn = !isFlashlightOn;
-                // Play a click sound (optional, helps feedback)
                 client.player.playSound(net.minecraft.sound.SoundEvents.BLOCK_LEVER_CLICK, 0.5f, isFlashlightOn ? 0.6f : 0.5f);
             }
 
@@ -59,7 +57,7 @@ public class FlashlightModClient implements ClientModInitializer {
                     lightHitPos = hit.getPos();
                     playerDistToTarget = client.player.getEyePos().distanceTo(lightHitPos);
                 } else {
-                    lightHitPos = null; // Pointing at sky
+                    lightHitPos = null; 
                 }
             } else {
                 lightHitPos = null;
