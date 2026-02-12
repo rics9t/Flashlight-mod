@@ -1,79 +1,69 @@
-package com.example.ricsashlight.mixin;
+package com.rics.flashlight;
 
-import com.example.ricsashlight.ricsashlightModClient;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.BlockRenderView;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
+import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.math.Vec3d;
+import org.lwjgl.glfw.GLFW;
 
-@Mixin(WorldRenderer.class)
-public class WorldRendererMixin {
+import java.util.Set;
 
-    @Inject(method = "getLightmapCoordinates(Lnet/minecraft/world/BlockRenderView;Lnet/minecraft/block/BlockState;Lnet/minecraft/util/math/BlockPos;)I", at = @At("RETURN"), cancellable = true)
-    private static void modifyLightmapCoordinates(BlockRenderView world, BlockState state, BlockPos pos, CallbackInfoReturnable<Integer> cir) {
-        
-        int originalLight = cir.getReturnValue();
-        int skyLight = (originalLight >> 20) & 15;
-        int blockLight = (originalLight >> 4) & 15;
+public class FlashlightModClient implements ClientModInitializer {
 
-        boolean modified = false;
+    public static KeyBinding flashlightKey;
+    public static boolean isFlashlightOn = false;
 
-        // --- FEATURE 1: SPB-REVAMPED GLOW ---
-        // Get the string ID of the block being rendered
-        Identifier id = Registries.BLOCK.getId(state.getBlock());
-        if (ricsashlightModClient.GLOWING_BLOCK_IDS.contains(id.toString())) {
-            // Force light level 10 (or higher if the world is naturally brighter)
-            blockLight = Math.max(blockLight, 10);
-            modified = true;
-        }
+    // Data passed to the Renderer
+    public static Vec3d lightHitPos = null;
+    public static double playerDistToTarget = 0;
 
-        // --- FEATURE 2: ricsASHLIGHT BEAM ---
-        if (ricsashlightModClient.isricsashlightOn && ricsashlightModClient.lightHitPos != null) {
-            
-            // Calculate distance from this block to the point the ricsashlight hit
-            double distSq = pos.getSquaredDistance(ricsashlightModClient.lightHitPos.x, ricsashlightModClient.lightHitPos.y, ricsashlightModClient.lightHitPos.z);
-            double distPlayerToTarget = ricsashlightModClient.playerDistToTarget;
+    // The list of blocks from the other mod that should glow
+    public static final Set<String> GLOWING_BLOCK_IDS = Set.of(
+            "spb-revamped:tiny_fluorescent_light",
+            "spb-revamped:ceiling_light",
+            "spb-revamped:thin_fluorescent_light",
+            "spb-revamped:fluorescent_light"
+    );
 
-            // BEAM PHYSICS LOGIC:
-            // 1. If we are close (dist < 5), the beam is focused (radius small), light is bright (15).
-            // 2. If we are far (dist > 20), the beam spreads (radius large), light is dimmer (11-12).
-            
-            // Calculate "Spread Radius" based on distance
-            // At 0 distance, radius is 1.5. At 20 distance, radius is 4.5.
-            double spreadRadius = 1.5 + (distPlayerToTarget * 0.15); 
+    @Override
+    public void onInitializeClient() {
+        // Register Key "R"
+        flashlightKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.flashlight.toggle",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_R,
+                "category.flashlight"
+        ));
 
-            // Check if this block is within the ricsashlight circle
-            if (distSq < (spreadRadius * spreadRadius)) {
-                
-                // Calculate Falloff (center is brightest, edges are dim)
-                double falloff = 1.0 - (Math.sqrt(distSq) / spreadRadius);
-                
-                // Base intensity drops as player gets farther away
-                int baseIntensity = (distPlayerToTarget < 5) ? 15 : 12;
-                
-                // Calculate final added light for this specific block
-                int addedLight = (int) (baseIntensity * falloff);
-                
-                // Apply the light (Keep the highest value so we don't darken already bright blocks)
-                blockLight = Math.max(blockLight, addedLight);
-                modified = true;
+        // Tick Event: Check toggles and calculate raycast
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (client.player == null || client.world == null) return;
+
+            // Toggle Logic
+            while (flashlightKey.wasPressed()) {
+                isFlashlightOn = !isFlashlightOn;
+                // Play a click sound (optional, helps feedback)
+                client.player.playSound(net.minecraft.sound.SoundEvents.BLOCK_LEVER_CLICK, 0.5f, isFlashlightOn ? 0.6f : 0.5f);
             }
-        }
 
-        // Re-pack the light value if we changed anything
-        if (modified) {
-            // Clamp to 15
-            blockLight = MathHelper.clamp(blockLight, 0, 15);
-            // Reconstruct the integer: (Sky << 20) | (Block << 4)
-            int newLight = (skyLight << 20) | (blockLight << 4);
-            cir.setReturnValue(newLight);
-        }
+            // Raycast Logic (Beam Physics Calculation)
+            if (isFlashlightOn) {
+                // Raycast 30 blocks ahead
+                HitResult hit = client.player.raycast(30.0D, 0.0F, false);
+                
+                if (hit.getType() != HitResult.Type.MISS) {
+                    lightHitPos = hit.getPos();
+                    playerDistToTarget = client.player.getEyePos().distanceTo(lightHitPos);
+                } else {
+                    lightHitPos = null; // Pointing at sky
+                }
+            } else {
+                lightHitPos = null;
+            }
+        });
     }
 }

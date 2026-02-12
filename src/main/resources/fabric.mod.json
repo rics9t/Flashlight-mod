@@ -11,7 +11,7 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "com.example.flashlight.FlashlightModClient"
+      "com.rics.flashlight.FlashlightModClient"
     ]
   },
   "mixins": [
