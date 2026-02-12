@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "flashlight",
+  "version": "1.0.0",
+  "name": "Flashlight Mod",
+  "description": "Adds a realistic flashlight and client-side lighting for SPB-Revamped blocks",
+  "authors": [
+    "rics9t"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/flashlight/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.flashlight.FlashlightMod"
+    ]
+  },
+  "mixins": [
+    "flashlight.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.14.0",
+    "fabric": "*",
+    "minecraft": "1.20.1"
+  }
+}
